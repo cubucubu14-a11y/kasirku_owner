@@ -2,40 +2,79 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  static Future<List<Map<String, dynamic>>> tarikSemuaData(
-    String url,
-    String namaCabang,
-  ) async {
+  // =========================================================================
+  // 1. FUNGSI AMBIL DAFTAR CABANG
+  // =========================================================================
+  static Future<List<String>> getDaftarCabang(String url) async {
     try {
-      // 1. Susun URL dengan parameter
       final uri = Uri.parse(url).replace(queryParameters: {
-        'action': 'tarikSemuaData',
-        'nama_cabang': namaCabang,
+        'action': 'getDaftarCabang',
       });
 
-      // 2. Gunakan GET (BUKAN POST)
       final response = await http.get(uri).timeout(const Duration(seconds: 30));
-
       final body = utf8.decode(response.bodyBytes).trim();
 
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception('HTTP ${response.statusCode}: ${body.isEmpty ? "respons kosong" : body}');
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}: $body');
       }
-      if (body.isEmpty) throw Exception('Respons kosong');
 
       final decoded = jsonDecode(body);
-
       if (decoded['status'] != 'success') {
-        throw Exception(decoded['message']?.toString() ?? 'Ditolak');
+        throw Exception(decoded['message'] ?? 'Gagal mengambil daftar cabang');
       }
 
-      final data = decoded['data'];
-      if (data is! List) throw Exception('Data bukan list');
+      final List<dynamic> data = decoded['data'];
+      return data.map((e) => e.toString()).toList();
+      
+    } catch (e) {
+      throw Exception('Gagal koneksi daftar cabang: $e');
+    }
+  }
 
-      return data.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList();
+  // =========================================================================
+  // 2. FUNGSI TARIK DATA DASHBOARD
+  // =========================================================================
+  static Future<Map<String, dynamic>> tarikSemuaData({
+    required String url,
+    required String cb,
+    required String filter, // 'hari_ini', 'minggu_ini', 'bulan_ini', 'custom'
+    String? tglMulai,
+    String? tglAkhir,
+  }) async {
+    try {
+      final Map<String, String> queryParams = {
+        'action': 'tarikSemuaData',
+        'cb': cb,
+        'filter': filter,
+      };
+
+      if (filter == 'custom' && tglMulai != null && tglAkhir != null) {
+        queryParams['tgl_mulai'] = tglMulai;
+        queryParams['tgl_akhir'] = tglAkhir;
+      }
+
+      final uri = Uri.parse(url).replace(queryParameters: queryParams);
+
+      final response = await http.get(uri).timeout(const Duration(seconds: 30));
+      final body = utf8.decode(response.bodyBytes).trim();
+
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}: $body');
+      }
+      
+      if (body.isEmpty) {
+        throw Exception('Apps Script mengembalikan respons kosong');
+      }
+
+      final decoded = jsonDecode(body);
+      if (decoded['status'] != 'success') {
+        throw Exception(decoded['message'] ?? 'Gagal mengambil data dashboard');
+      }
+
+      return decoded['data'] as Map<String, dynamic>;
 
     } catch (e) {
-      throw Exception(e.toString());
+      throw Exception('Gagal koneksi data dashboard: $e');
     }
   }
 }
