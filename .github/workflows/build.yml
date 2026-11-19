@@ -101,9 +101,6 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      - name: Generate App Icon
-        run: dart run flutter_launcher_icons
-
       - name: Build APK (Signed)
         run: flutter build apk --release
 
