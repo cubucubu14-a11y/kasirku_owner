@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../api_service.dart';
+import '../api_service.dart'; // <-- Import sudah diperbaiki
 
 class OwnerDashboard extends StatefulWidget {
   const OwnerDashboard({super.key});
@@ -11,24 +11,17 @@ class OwnerDashboard extends StatefulWidget {
 }
 
 class _OwnerDashboardState extends State<OwnerDashboard> {
-  // --- KONFIGURASI ---
-  // GANTI DENGAN URL WEB APP APPS SCRIPT ANDA (yang berakhiran /exec)
   final String urlApi = 'https://script.google.com/macros/s/AKfycbxJBGAB528qEb8bpSzKMU0h_MkQ5_X0xaMbKphy1iffkdy6zsIajuoEi1LRzCpnnIM/exec';
 
-  // --- STATE VARIABEL ---
   bool _isLoading = true;
   String _errorMessage = '';
   
   List<String> _daftarCabang = ['Semua'];
   String _cabangAktif = 'Semua';
-  
-  String _filterTanggal = 'bulan_ini'; // hari_ini, minggu_ini, bulan_ini, custom
+  String _filterTanggal = 'bulan_ini';
   DateTimeRange? _customDateRange;
-
-  // Data Dashboard
   Map<String, dynamic>? _dataDashboard;
 
-  // Warna Tema
   final Color _bgColor = const Color(0xFF0F111A);
   final Color _cardColor = const Color(0xFF1E1E2C);
   final Color _primaryColor = const Color(0xFF8A78E5);
@@ -40,7 +33,6 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     _initData();
   }
 
-  // --- INISIALISASI AWAL ---
   Future<void> _initData() async {
     await _loadPreferences();
     await _fetchDaftarCabang();
@@ -61,57 +53,35 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     await prefs.setString('filter_tanggal', _filterTanggal);
   }
 
-  // --- API CALLS ---
   Future<void> _fetchDaftarCabang() async {
     try {
       final list = await ApiService.getDaftarCabang(urlApi);
       setState(() {
         _daftarCabang = list;
-        // Jika cabang yang tersimpan tidak ada di list (misal dihapus), kembalikan ke Semua
-        if (!_daftarCabang.contains(_cabangAktif)) {
-          _cabangAktif = 'Semua';
-        }
+        if (!_daftarCabang.contains(_cabangAktif)) _cabangAktif = 'Semua';
       });
-    } catch (e) {
-      // Abaikan error daftar cabang, gunakan default 'Semua'
-    }
+    } catch (e) {}
   }
 
   Future<void> _fetchDataDashboard() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = '';
-    });
-
+    setState(() { _isLoading = true; _errorMessage = ''; });
     try {
-      String? startStr;
-      String? endStr;
+      String? startStr, endStr;
       if (_filterTanggal == 'custom' && _customDateRange != null) {
         startStr = DateFormat('yyyy-MM-dd').format(_customDateRange!.start);
         endStr = DateFormat('yyyy-MM-dd').format(_customDateRange!.end);
       }
 
       final result = await ApiService.tarikSemuaData(
-        url: urlApi,
-        cb: _cabangAktif,
-        filter: _filterTanggal,
-        tglMulai: startStr,
-        tglAkhir: endStr,
+        url: urlApi, cb: _cabangAktif, filter: _filterTanggal, tglMulai: startStr, tglAkhir: endStr,
       );
 
-      setState(() {
-        _dataDashboard = result;
-        _isLoading = false;
-      });
+      setState(() { _dataDashboard = result; _isLoading = false; });
     } catch (e) {
-      setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '');
-        _isLoading = false;
-      });
+      setState(() { _errorMessage = e.toString().replaceAll('Exception: ', ''); _isLoading = false; });
     }
   }
 
-  // --- HELPER FORMAT ---
   String _formatRupiah(dynamic number) {
     if (number == null) return 'Rp 0';
     final parsed = double.tryParse(number.toString()) ?? 0;
@@ -125,16 +95,13 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       case 'bulan_ini': return 'Bulan Ini';
       case 'custom':
         if (_customDateRange != null) {
-          final start = DateFormat('d MMM').format(_customDateRange!.start);
-          final end = DateFormat('d MMM').format(_customDateRange!.end);
-          return '$start - $end';
+          return '${DateFormat('d MMM').format(_customDateRange!.start)} - ${DateFormat('d MMM').format(_customDateRange!.end)}';
         }
         return 'Custom';
       default: return 'Pilih Tanggal';
     }
   }
 
-  // --- UI BUILDER ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -150,9 +117,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
               Expanded(
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator(color: Color(0xFF8A78E5)))
-                    : _errorMessage.isNotEmpty
-                        ? _buildErrorState()
-                        : _buildContent(),
+                    : _errorMessage.isNotEmpty ? _buildErrorState() : _buildContent(),
               ),
             ],
           ),
@@ -170,26 +135,15 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Dashboard Owner',
-                style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w400),
-              ),
+              const Text('Dashboard Owner', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w400)),
               const SizedBox(height: 4),
               _buildDropdownCabang(),
             ],
           ),
           Row(
             children: [
-              IconButton(
-                icon: const Icon(Icons.refresh, color: Colors.white),
-                onPressed: _fetchDataDashboard,
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings, color: Colors.white),
-                onPressed: () {
-                  // TODO: Buka halaman pengaturan
-                },
-              ),
+              IconButton(icon: const Icon(Icons.refresh, color: Colors.white), onPressed: _fetchDataDashboard),
+              IconButton(icon: const Icon(Icons.settings, color: Colors.white), onPressed: () {}),
             ],
           )
         ],
@@ -200,13 +154,11 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   Widget _buildDropdownCabang() {
     return PopupMenuButton<String>(
       color: _cardColor,
-      offset: const Offset(0, 40), // Muncul ke bawah
+      offset: const Offset(0, 40),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       onSelected: (String newValue) {
         if (newValue != _cabangAktif) {
-          setState(() {
-            _cabangAktif = newValue;
-          });
+          setState(() { _cabangAktif = newValue; });
           _savePreferences();
           _fetchDataDashboard();
         }
@@ -220,15 +172,9 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  isSemua ? '🏢 Semua Cabang (Total)' : cabang,
-                  style: TextStyle(
-                    color: isSelected ? _primaryColor : Colors.white,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  ),
-                ),
-                if (isSelected)
-                  Icon(Icons.check, color: _primaryColor, size: 18),
+                Text(isSemua ? '🏢 Semua Cabang (Total)' : cabang,
+                    style: TextStyle(color: isSelected ? _primaryColor : Colors.white, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+                if (isSelected) Icon(Icons.check, color: _primaryColor, size: 18),
               ],
             ),
           );
@@ -236,10 +182,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       },
       child: Row(
         children: [
-          Text(
-            _cabangAktif == 'Semua' ? 'Semua Cabang' : _cabangAktif,
-            style: TextStyle(color: _textMuted, fontSize: 14),
-          ),
+          Text(_cabangAktif == 'Semua' ? 'Semua Cabang' : _cabangAktif, style: TextStyle(color: _textMuted, fontSize: 14)),
           const SizedBox(width: 4),
           Icon(Icons.arrow_drop_down, color: _textMuted, size: 20),
         ],
@@ -253,43 +196,21 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Row(
         children: [
-          _buildChip('Hari Ini', 'hari_ini'),
-          const SizedBox(width: 8),
-          _buildChip('Minggu Ini', 'minggu_ini'),
-          const SizedBox(width: 8),
-          _buildChip('Bulan Ini', 'bulan_ini'),
-          const SizedBox(width: 8),
+          _buildChip('Hari Ini', 'hari_ini'), const SizedBox(width: 8),
+          _buildChip('Minggu Ini', 'minggu_ini'), const SizedBox(width: 8),
+          _buildChip('Bulan Ini', 'bulan_ini'), const SizedBox(width: 8),
           ActionChip(
             backgroundColor: _filterTanggal == 'custom' ? _primaryColor : _cardColor,
             side: BorderSide(color: _filterTanggal == 'custom' ? _primaryColor : Colors.grey[800]!),
             avatar: Icon(Icons.calendar_today, size: 14, color: _filterTanggal == 'custom' ? Colors.white : _textMuted),
-            label: Text(
-              _getFilterLabel(),
-              style: TextStyle(
-                color: _filterTanggal == 'custom' ? Colors.white : _textMuted,
-                fontWeight: _filterTanggal == 'custom' ? FontWeight.bold : FontWeight.normal,
-                fontSize: 13,
-              ),
-            ),
+            label: Text(_getFilterLabel(), style: TextStyle(color: _filterTanggal == 'custom' ? Colors.white : _textMuted, fontWeight: _filterTanggal == 'custom' ? FontWeight.bold : FontWeight.normal, fontSize: 13)),
             onPressed: () async {
               final picked = await showDateRangePicker(
-                context: context,
-                firstDate: DateTime(2023),
-                lastDate: DateTime.now(),
-                builder: (context, child) {
-                  return Theme(
-                    data: ThemeData.dark().copyWith(
-                      colorScheme: ColorScheme.dark(primary: _primaryColor),
-                    ),
-                    child: child!,
-                  );
-                },
+                context: context, firstDate: DateTime(2023), lastDate: DateTime.now(),
+                builder: (context, child) => Theme(data: ThemeData.dark().copyWith(colorScheme: ColorScheme.dark(primary: _primaryColor)), child: child!),
               );
               if (picked != null) {
-                setState(() {
-                  _customDateRange = picked;
-                  _filterTanggal = 'custom';
-                });
+                setState(() { _customDateRange = picked; _filterTanggal = 'custom'; });
                 _savePreferences();
                 _fetchDataDashboard();
               }
@@ -304,27 +225,14 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     final isActive = _filterTanggal == value;
     return GestureDetector(
       onTap: () {
-        setState(() {
-          _filterTanggal = value;
-        });
+        setState(() { _filterTanggal = value; });
         _savePreferences();
         _fetchDataDashboard();
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isActive ? _primaryColor : _cardColor,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isActive ? _primaryColor : Colors.grey[800]!),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isActive ? Colors.white : _textMuted,
-            fontSize: 13,
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
+        decoration: BoxDecoration(color: isActive ? _primaryColor : _cardColor, borderRadius: BorderRadius.circular(20), border: Border.all(color: isActive ? _primaryColor : Colors.grey[800]!)),
+        child: Text(label, style: TextStyle(color: isActive ? Colors.white : _textMuted, fontSize: 13, fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
       ),
     );
   }
@@ -338,17 +246,9 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
           children: [
             const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
             const SizedBox(height: 16),
-            Text(
-              'Gagal mengambil data:\n$_errorMessage',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70),
-            ),
+            Text('Gagal mengambil data:\n$_errorMessage', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70)),
             const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _fetchDataDashboard,
-              style: ElevatedButton.styleFrom(backgroundColor: _primaryColor),
-              child: const Text('Coba Lagi'),
-            )
+            ElevatedButton(onPressed: _fetchDataDashboard, style: ElevatedButton.styleFrom(backgroundColor: _primaryColor), child: const Text('Coba Lagi'))
           ],
         ),
       ),
@@ -357,7 +257,6 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
 
   Widget _buildContent() {
     if (_dataDashboard == null) return const SizedBox();
-
     final total = _dataDashboard!['total'];
     final isSemua = _cabangAktif == 'Semua';
 
@@ -366,40 +265,28 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       children: [
         const Text('Ringkasan penjualan', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 16),
-        
-        // GRID RINGKASAN
-        Row(
-          children: [
-            Expanded(child: _buildSummaryCard('Total Omset', _formatRupiah(total['omset']), Icons.show_chart, Colors.purpleAccent)),
-            const SizedBox(width: 12),
-            Expanded(child: _buildSummaryCard('Total Transaksi', '${total['trx']}', Icons.receipt, Colors.tealAccent)),
-          ],
-        ),
+        Row(children: [
+          Expanded(child: _buildSummaryCard('Total Omset', _formatRupiah(total['omset']), Icons.show_chart, Colors.purpleAccent)),
+          const SizedBox(width: 12),
+          Expanded(child: _buildSummaryCard('Total Transaksi', '${total['trx']}', Icons.receipt, Colors.tealAccent)),
+        ]),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(child: _buildSummaryCard('Total Tunai', _formatRupiah(total['tunai']), Icons.money, Colors.orangeAccent)),
-            const SizedBox(width: 12),
-            Expanded(child: _buildSummaryCard('Total QRIS', _formatRupiah(total['qris']), Icons.qr_code, Colors.blueAccent)),
-          ],
-        ),
-        
+        Row(children: [
+          Expanded(child: _buildSummaryCard('Total Tunai', _formatRupiah(total['tunai']), Icons.money, Colors.orangeAccent)),
+          const SizedBox(width: 12),
+          Expanded(child: _buildSummaryCard('Total QRIS', _formatRupiah(total['qris']), Icons.qr_code, Colors.blueAccent)),
+        ]),
         const SizedBox(height: 24),
-
-        // TAMPILAN JIKA PILIH 1 CABANG (PRODUK GLOBAL)
         if (!isSemua) ...[
           const Text('Produk terlaris', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           ..._buildProdukList(_dataDashboard!['produk_global']),
         ],
-
-        // TAMPILAN JIKA PILIH SEMUA CABANG (RINCIAN)
         if (isSemua) ...[
           const Text('Rincian Kinerja Cabang', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           ..._buildRincianCabangList(total['omset']),
         ],
-
         const SizedBox(height: 40),
       ],
     );
@@ -429,14 +316,9 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   }
 
   List<Widget> _buildProdukList(List<dynamic> produkList) {
-    if (produkList.isEmpty) {
-      return [const Center(child: Text('Belum ada data produk.', style: TextStyle(color: Colors.grey)))];
-    }
-    
-    // Cari QTY terbanyak untuk persentase bar
+    if (produkList.isEmpty) return [const Center(child: Text('Belum ada data produk.', style: TextStyle(color: Colors.grey)))];
     int maxQty = 1;
     for(var p in produkList) { if(p['qty'] > maxQty) maxQty = p['qty']; }
-
     return produkList.map((p) {
       double persen = (p['qty'] / maxQty);
       return Container(
@@ -446,13 +328,10 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(p['nama'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                Text('${p['qty']} qty', style: TextStyle(color: _textMuted)),
-              ],
-            ),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text(p['nama'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              Text('${p['qty']} qty', style: TextStyle(color: _textMuted)),
+            ]),
             const SizedBox(height: 8),
             LinearProgressIndicator(value: persen, backgroundColor: Colors.grey[800], color: _primaryColor, minHeight: 6),
             const SizedBox(height: 8),
@@ -473,65 +352,42 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
 
       return GestureDetector(
         onTap: () {
-          // Drill down ke cabang tersebut
-          setState(() {
-            _cabangAktif = r['nama'];
-          });
+          setState(() { _cabangAktif = r['nama']; });
           _savePreferences();
           _fetchDataDashboard();
         },
         child: Container(
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A27),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFF2A2A3C)),
-          ),
+          decoration: BoxDecoration(color: const Color(0xFF1A1A27), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFF2A2A3C))),
           child: Column(
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(r['nama'], style: TextStyle(color: _primaryColor, fontWeight: FontWeight.bold, fontSize: 16)),
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(color: const Color(0xFF2A2A3C), borderRadius: BorderRadius.circular(12)),
-                        child: Text('Kontribusi: ${persentase.toStringAsFixed(1)}%', style: TextStyle(color: _textMuted, fontSize: 11)),
-                      ),
-                    ],
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(r['nama'], style: TextStyle(color: _primaryColor, fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(color: const Color(0xFF2A2A3C), borderRadius: BorderRadius.circular(12)),
+                    child: Text('Kontribusi: ${persentase.toStringAsFixed(1)}%', style: TextStyle(color: _textMuted, fontSize: 11)),
                   ),
-                  Row(
-                    children: [
-                      Text(_formatRupiah(r['omset']), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                      const SizedBox(width: 4),
-                      Icon(Icons.chevron_right, color: _textMuted, size: 20),
-                    ],
-                  )
-                ],
-              ),
+                ]),
+                Row(children: [
+                  Text(_formatRupiah(r['omset']), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 4),
+                  Icon(Icons.chevron_right, color: _textMuted, size: 20),
+                ])
+              ]),
               const Divider(color: Color(0xFF333333), height: 24),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Terlaris di cabang ini:', style: TextStyle(color: _textMuted, fontSize: 12, fontStyle: FontStyle.italic)),
-              ),
+              Align(alignment: Alignment.centerLeft, child: Text('Terlaris di cabang ini:', style: TextStyle(color: _textMuted, fontSize: 12, fontStyle: FontStyle.italic))),
               const SizedBox(height: 8),
-              
-              // List Produk Per Cabang
               ...(r['produk'] as List<dynamic>).map((p) {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(p['nama'], style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                      Text('${p['qty']} qty', style: TextStyle(color: _textMuted, fontSize: 13)),
-                    ],
-                  ),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                    Text(p['nama'], style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                    Text('${p['qty']} qty', style: TextStyle(color: _textMuted, fontSize: 13)),
+                  ]),
                 );
               }),
             ],
