@@ -1,10 +1,7 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-import '../services/api_service.dart';
+import '../api_service.dart';
 
 class OwnerDashboard extends StatefulWidget {
   const OwnerDashboard({super.key});
@@ -14,502 +11,533 @@ class OwnerDashboard extends StatefulWidget {
 }
 
 class _OwnerDashboardState extends State<OwnerDashboard> {
-  static const _urlKey = 'apps_script_url';
-  static const _cabangKey = 'nama_cabang';
+  // --- KONFIGURASI ---
+  // GANTI DENGAN URL WEB APP APPS SCRIPT ANDA (yang berakhiran /exec)
+  final String urlApi = 'https://script.google.com/macros/s/AKfycbxJBGAB528qEb8bpSzKMU0h_MkQ5_X0xaMbKphy1iffkdy6zsIajuoEi1LRzCpnnIM/exec';
 
-  final List<Map<String, dynamic>> _transaksi = [];
-  bool _isLoading = false;
-  String _url = '';
-  String _namaCabang = '';
-  String? _errorMessage;
+  // --- STATE VARIABEL ---
+  bool _isLoading = true;
+  String _errorMessage = '';
+  
+  List<String> _daftarCabang = ['Semua'];
+  String _cabangAktif = 'Semua';
+  
+  String _filterTanggal = 'bulan_ini'; // hari_ini, minggu_ini, bulan_ini, custom
+  DateTimeRange? _customDateRange;
 
-  static const _background = Color(0xFF10131A);
-  static const _surface = Color(0xFF1A1F2B);
-  static const _muted = Color(0xFF9AA4B2);
-  static const _accent = Color(0xFF8B7CFF);
+  // Data Dashboard
+  Map<String, dynamic>? _dataDashboard;
+
+  // Warna Tema
+  final Color _bgColor = const Color(0xFF0F111A);
+  final Color _cardColor = const Color(0xFF1E1E2C);
+  final Color _primaryColor = const Color(0xFF8A78E5);
+  final Color _textMuted = const Color(0xFFA0A0B0);
 
   @override
   void initState() {
     super.initState();
-    _loadPengaturan();
+    _initData();
   }
 
-  Future<void> _loadPengaturan() async {
-    final preferences = await SharedPreferences.getInstance();
-    if (!mounted) return;
+  // --- INISIALISASI AWAL ---
+  Future<void> _initData() async {
+    await _loadPreferences();
+    await _fetchDaftarCabang();
+    await _fetchDataDashboard();
+  }
+
+  Future<void> _loadPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _url = preferences.getString(_urlKey) ?? '';
-      _namaCabang = preferences.getString(_cabangKey) ?? '';
+      _cabangAktif = prefs.getString('cabang_aktif') ?? 'Semua';
+      _filterTanggal = prefs.getString('filter_tanggal') ?? 'bulan_ini';
     });
   }
 
-  Future<void> _bukaPengaturan() async {
-    final urlController = TextEditingController(text: _url);
-    final cabangController = TextEditingController(text: _namaCabang);
+  Future<void> _savePreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cabang_aktif', _cabangAktif);
+    await prefs.setString('filter_tanggal', _filterTanggal);
+  }
 
-    final pengaturan = await showDialog<Map<String, String>>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: _surface,
-        title: const Text('Pengaturan koneksi'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: urlController,
-              keyboardType: TextInputType.url,
-              decoration: const InputDecoration(
-                labelText: 'URL Apps Script',
-                hintText: 'https://script.google.com/...',
+  // --- API CALLS ---
+  Future<void> _fetchDaftarCabang() async {
+    try {
+      final list = await ApiService.getDaftarCabang(urlApi);
+      setState(() {
+        _daftarCabang = list;
+        // Jika cabang yang tersimpan tidak ada di list (misal dihapus), kembalikan ke Semua
+        if (!_daftarCabang.contains(_cabangAktif)) {
+          _cabangAktif = 'Semua';
+        }
+      });
+    } catch (e) {
+      // Abaikan error daftar cabang, gunakan default 'Semua'
+    }
+  }
+
+  Future<void> _fetchDataDashboard() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
+    try {
+      String? startStr;
+      String? endStr;
+      if (_filterTanggal == 'custom' && _customDateRange != null) {
+        startStr = DateFormat('yyyy-MM-dd').format(_customDateRange!.start);
+        endStr = DateFormat('yyyy-MM-dd').format(_customDateRange!.end);
+      }
+
+      final result = await ApiService.tarikSemuaData(
+        url: urlApi,
+        cb: _cabangAktif,
+        filter: _filterTanggal,
+        tglMulai: startStr,
+        tglAkhir: endStr,
+      );
+
+      setState(() {
+        _dataDashboard = result;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString().replaceAll('Exception: ', '');
+        _isLoading = false;
+      });
+    }
+  }
+
+  // --- HELPER FORMAT ---
+  String _formatRupiah(dynamic number) {
+    if (number == null) return 'Rp 0';
+    final parsed = double.tryParse(number.toString()) ?? 0;
+    return NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(parsed);
+  }
+
+  String _getFilterLabel() {
+    switch (_filterTanggal) {
+      case 'hari_ini': return 'Hari Ini';
+      case 'minggu_ini': return 'Minggu Ini';
+      case 'bulan_ini': return 'Bulan Ini';
+      case 'custom':
+        if (_customDateRange != null) {
+          final start = DateFormat('d MMM').format(_customDateRange!.start);
+          final end = DateFormat('d MMM').format(_customDateRange!.end);
+          return '$start - $end';
+        }
+        return 'Custom';
+      default: return 'Pilih Tanggal';
+    }
+  }
+
+  // --- UI BUILDER ---
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _bgColor,
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _fetchDataDashboard,
+          color: _primaryColor,
+          child: Column(
+            children: [
+              _buildHeader(),
+              _buildFilterChips(),
+              Expanded(
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator(color: Color(0xFF8A78E5)))
+                    : _errorMessage.isNotEmpty
+                        ? _buildErrorState()
+                        : _buildContent(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Dashboard Owner',
+                style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w400),
+              ),
+              const SizedBox(height: 4),
+              _buildDropdownCabang(),
+            ],
+          ),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.refresh, color: Colors.white),
+                onPressed: _fetchDataDashboard,
+              ),
+              IconButton(
+                icon: const Icon(Icons.settings, color: Colors.white),
+                onPressed: () {
+                  // TODO: Buka halaman pengaturan
+                },
+              ),
+            ],
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDropdownCabang() {
+    return PopupMenuButton<String>(
+      color: _cardColor,
+      offset: const Offset(0, 40), // Muncul ke bawah
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onSelected: (String newValue) {
+        if (newValue != _cabangAktif) {
+          setState(() {
+            _cabangAktif = newValue;
+          });
+          _savePreferences();
+          _fetchDataDashboard();
+        }
+      },
+      itemBuilder: (BuildContext context) {
+        return _daftarCabang.map((String cabang) {
+          final isSelected = cabang == _cabangAktif;
+          final isSemua = cabang == 'Semua';
+          return PopupMenuItem<String>(
+            value: cabang,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  isSemua ? '🏢 Semua Cabang (Total)' : cabang,
+                  style: TextStyle(
+                    color: isSelected ? _primaryColor : Colors.white,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+                if (isSelected)
+                  Icon(Icons.check, color: _primaryColor, size: 18),
+              ],
+            ),
+          );
+        }).toList();
+      },
+      child: Row(
+        children: [
+          Text(
+            _cabangAktif == 'Semua' ? 'Semua Cabang' : _cabangAktif,
+            style: TextStyle(color: _textMuted, fontSize: 14),
+          ),
+          const SizedBox(width: 4),
+          Icon(Icons.arrow_drop_down, color: _textMuted, size: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChips() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      child: Row(
+        children: [
+          _buildChip('Hari Ini', 'hari_ini'),
+          const SizedBox(width: 8),
+          _buildChip('Minggu Ini', 'minggu_ini'),
+          const SizedBox(width: 8),
+          _buildChip('Bulan Ini', 'bulan_ini'),
+          const SizedBox(width: 8),
+          ActionChip(
+            backgroundColor: _filterTanggal == 'custom' ? _primaryColor : _cardColor,
+            side: BorderSide(color: _filterTanggal == 'custom' ? _primaryColor : Colors.grey[800]!),
+            avatar: Icon(Icons.calendar_today, size: 14, color: _filterTanggal == 'custom' ? Colors.white : _textMuted),
+            label: Text(
+              _getFilterLabel(),
+              style: TextStyle(
+                color: _filterTanggal == 'custom' ? Colors.white : _textMuted,
+                fontWeight: _filterTanggal == 'custom' ? FontWeight.bold : FontWeight.normal,
+                fontSize: 13,
               ),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: cabangController,
-              decoration: const InputDecoration(labelText: 'Nama Cabang'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Batal'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, {
-              'url': urlController.text.trim(),
-              'cabang': cabangController.text.trim(),
-            }),
-            child: const Text('Simpan'),
+            onPressed: () async {
+              final picked = await showDateRangePicker(
+                context: context,
+                firstDate: DateTime(2023),
+                lastDate: DateTime.now(),
+                builder: (context, child) {
+                  return Theme(
+                    data: ThemeData.dark().copyWith(
+                      colorScheme: ColorScheme.dark(primary: _primaryColor),
+                    ),
+                    child: child!,
+                  );
+                },
+              );
+              if (picked != null) {
+                setState(() {
+                  _customDateRange = picked;
+                  _filterTanggal = 'custom';
+                });
+                _savePreferences();
+                _fetchDataDashboard();
+              }
+            },
           ),
         ],
       ),
     );
-    urlController.dispose();
-    cabangController.dispose();
-
-    if (pengaturan == null) return;
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(_urlKey, pengaturan['url'] ?? '');
-    await preferences.setString(_cabangKey, pengaturan['cabang'] ?? '');
-    if (!mounted) return;
-    setState(() {
-      _url = pengaturan['url'] ?? '';
-      _namaCabang = pengaturan['cabang'] ?? '';
-    });
-    _tampilkanPesan('Pengaturan berhasil disimpan.');
   }
 
-  Future<void> _tarikData() async {
-    if (_url.isEmpty || _namaCabang.isEmpty) {
-      _tampilkanPesan('Isi URL Apps Script dan Nama Cabang melalui Pengaturan.');
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-    try {
-      final data = await ApiService.tarikSemuaData(_url, _namaCabang);
-      if (!mounted) return;
-      setState(() {
-        _transaksi
-          ..clear()
-          ..addAll(data);
-      });
-      _tampilkanPesan('Data berhasil diperbarui.');
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _errorMessage = 'Gagal mengambil data: $error');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  void _tampilkanPesan(String pesan) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(pesan)));
-  }
-
-  double _angka(dynamic value) {
-    if (value is num) return value.toDouble();
-    if (value == null) return 0;
-    final normalized = value.toString().trim().replaceAll(',', '.');
-    return double.tryParse(normalized) ?? 0;
-  }
-
-  double _nilaiPertama(Map<String, dynamic> item, List<String> keys) {
-    for (final key in keys) {
-      if (item[key] != null) return _angka(item[key]);
-    }
-    return 0;
-  }
-
-  String _teksPertama(Map<String, dynamic> item, List<String> keys) {
-    for (final key in keys) {
-      final value = item[key];
-      if (value != null && value.toString().trim().isNotEmpty) {
-        return value.toString();
-      }
-    }
-    return 'Lainnya';
-  }
-
-  double get _totalOmset => _transaksi.fold<double>(
-        0,
-        (total, transaksi) =>
-            total + _nilaiPertama(transaksi, ['total', 'total_transaksi', 'nominal']),
-      );
-
-  double _totalMetode(List<String> metodeYangDicari) {
-    return _transaksi.where((transaksi) {
-      final metode = _teksPertama(
-        transaksi,
-        ['metode_pembayaran', 'metode', 'payment_method'],
-      ).toLowerCase();
-      return metodeYangDicari.any(metode.contains);
-    }).fold<double>(
-      0,
-      (total, transaksi) =>
-          total + _nilaiPertama(transaksi, ['total', 'total_transaksi', 'nominal']),
+  Widget _buildChip(String label, String value) {
+    final isActive = _filterTanggal == value;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _filterTanggal = value;
+        });
+        _savePreferences();
+        _fetchDataDashboard();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? _primaryColor : _cardColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: isActive ? _primaryColor : Colors.grey[800]!),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isActive ? Colors.white : _textMuted,
+            fontSize: 13,
+            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
     );
   }
 
-  List<_ProdukTerlaris> get _produkTerlaris {
-    final agregat = <String, _ProdukTerlaris>{};
-    for (final transaksi in _transaksi) {
-      final detail = transaksi['detail_produk'];
-      dynamic parsed = detail;
-      if (detail is String) {
-        try {
-          parsed = jsonDecode(detail);
-        } on FormatException {
-          continue;
-        }
-      }
-      if (parsed is! List) continue;
-
-      for (final item in parsed) {
-        if (item is! Map) continue;
-        final produk = Map<String, dynamic>.from(item);
-        final nama = _teksPertama(
-          produk,
-          ['nama_produk', 'nama', 'produk', 'product_name'],
-        );
-        final qty = _nilaiPertama(produk, ['qty', 'jumlah', 'quantity']);
-        final nominalTersedia = [
-          'subtotal',
-          'nominal',
-          'total',
-          'total_harga',
-        ].firstWhere((key) => produk[key] != null, orElse: () => '');
-        final nominal = nominalTersedia.isNotEmpty
-            ? _angka(produk[nominalTersedia])
-            : _nilaiPertama(produk, ['harga', 'harga_satuan', 'price']) * qty;
-        final ringkasan = agregat.putIfAbsent(
-          nama,
-          () => _ProdukTerlaris(nama: nama),
-        );
-        ringkasan
-          ..qty += qty
-          ..nominal += nominal;
-      }
-    }
-    final hasil = agregat.values.toList()
-      ..sort((a, b) => b.qty.compareTo(a.qty));
-    return hasil;
-  }
-
-  String _formatRupiah(double value) =>
-      NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0)
-          .format(value);
-
-  @override
-  Widget build(BuildContext context) {
-    final produk = _produkTerlaris;
-    return Theme(
-      data: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: _background,
-        colorScheme: const ColorScheme.dark(
-          primary: _accent,
-          surface: _surface,
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: _background,
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-        cardTheme: const CardThemeData(color: _surface),
-      ),
-      child: Scaffold(
-        appBar: AppBar(
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Dashboard Owner'),
-              if (_namaCabang.isNotEmpty)
-                Text(
-                  _namaCabang,
-                  style: const TextStyle(fontSize: 12, color: _muted),
-                ),
-            ],
-          ),
-          actions: [
-            IconButton(
-              tooltip: 'Tarik data',
-              onPressed: _isLoading ? null : _tarikData,
-              icon: _isLoading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.sync),
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+            const SizedBox(height: 16),
+            Text(
+              'Gagal mengambil data:\n$_errorMessage',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70),
             ),
-            IconButton(
-              tooltip: 'Pengaturan',
-              onPressed: _bukaPengaturan,
-              icon: const Icon(Icons.settings_outlined),
-            ),
-            const SizedBox(width: 8),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _fetchDataDashboard,
+              style: ElevatedButton.styleFrom(backgroundColor: _primaryColor),
+              child: const Text('Coba Lagi'),
+            )
           ],
         ),
-        body: SafeArea(
-          child: RefreshIndicator(
-            onRefresh: _tarikData,
-            child: ListView(
-              padding: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    if (_dataDashboard == null) return const SizedBox();
+
+    final total = _dataDashboard!['total'];
+    final isSemua = _cabangAktif == 'Semua';
+
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        const Text('Ringkasan penjualan', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 16),
+        
+        // GRID RINGKASAN
+        Row(
+          children: [
+            Expanded(child: _buildSummaryCard('Total Omset', _formatRupiah(total['omset']), Icons.show_chart, Colors.purpleAccent)),
+            const SizedBox(width: 12),
+            Expanded(child: _buildSummaryCard('Total Transaksi', '${total['trx']}', Icons.receipt, Colors.tealAccent)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _buildSummaryCard('Total Tunai', _formatRupiah(total['tunai']), Icons.money, Colors.orangeAccent)),
+            const SizedBox(width: 12),
+            Expanded(child: _buildSummaryCard('Total QRIS', _formatRupiah(total['qris']), Icons.qr_code, Colors.blueAccent)),
+          ],
+        ),
+        
+        const SizedBox(height: 24),
+
+        // TAMPILAN JIKA PILIH 1 CABANG (PRODUK GLOBAL)
+        if (!isSemua) ...[
+          const Text('Produk terlaris', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          ..._buildProdukList(_dataDashboard!['produk_global']),
+        ],
+
+        // TAMPILAN JIKA PILIH SEMUA CABANG (RINCIAN)
+        if (isSemua) ...[
+          const Text('Rincian Kinerja Cabang', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          ..._buildRincianCabangList(total['omset']),
+        ],
+
+        const SizedBox(height: 40),
+      ],
+    );
+  }
+
+  Widget _buildSummaryCard(String title, String value, IconData icon, Color iconColor) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: _cardColor, borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        children: [
+          Icon(icon, color: iconColor, size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (_errorMessage != null) ...[
-                  _PesanError(pesan: _errorMessage!),
-                  const SizedBox(height: 16),
-                ],
-                const Text(
-                  'Ringkasan penjualan',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 12),
-                GridView.count(
-                  crossAxisCount: 2,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 1.65,
-                  children: [
-                    _KartuRingkasan(
-                      judul: 'Total Omset',
-                      nilai: _formatRupiah(_totalOmset),
-                      ikon: Icons.trending_up,
-                      warna: const Color(0xFF8B7CFF),
-                    ),
-                    _KartuRingkasan(
-                      judul: 'Total Transaksi',
-                      nilai: _transaksi.length.toString(),
-                      ikon: Icons.receipt_long_outlined,
-                      warna: const Color(0xFF56C8A3),
-                    ),
-                    _KartuRingkasan(
-                      judul: 'Total Tunai',
-                      nilai: _formatRupiah(_totalMetode(['tunai', 'cash'])),
-                      ikon: Icons.payments_outlined,
-                      warna: const Color(0xFFFFB45C),
-                    ),
-                    _KartuRingkasan(
-                      judul: 'Total QRIS',
-                      nilai: _formatRupiah(_totalMetode(['qris'])),
-                      ikon: Icons.qr_code_2,
-                      warna: const Color(0xFF63B8FF),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  'Produk terlaris',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 12),
-                if (produk.isEmpty)
-                  const Card(
-                    color: _surface,
-                    child: Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Text(
-                        'Belum ada data produk untuk ditampilkan.',
-                        style: TextStyle(color: _muted),
-                      ),
-                    ),
-                  )
-                else
-                  _GrafikProduk(
-                    produk: produk,
-                    formatRupiah: _formatRupiah,
-                  ),
+                Text(title, style: TextStyle(color: _textMuted, fontSize: 11)),
+                const SizedBox(height: 4),
+                Text(value, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
               ],
             ),
-          ),
-        ),
+          )
+        ],
       ),
     );
   }
-}
 
-class _ProdukTerlaris {
-  _ProdukTerlaris({required this.nama});
+  List<Widget> _buildProdukList(List<dynamic> produkList) {
+    if (produkList.isEmpty) {
+      return [const Center(child: Text('Belum ada data produk.', style: TextStyle(color: Colors.grey)))];
+    }
+    
+    // Cari QTY terbanyak untuk persentase bar
+    int maxQty = 1;
+    for(var p in produkList) { if(p['qty'] > maxQty) maxQty = p['qty']; }
 
-  final String nama;
-  double qty = 0;
-  double nominal = 0;
-}
-
-class _KartuRingkasan extends StatelessWidget {
-  const _KartuRingkasan({
-    required this.judul,
-    required this.nilai,
-    required this.ikon,
-    required this.warna,
-  });
-
-  final String judul;
-  final String nilai;
-  final IconData ikon;
-  final Color warna;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
+    return produkList.map((p) {
+      double persen = (p['qty'] / maxQty);
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: _cardColor, borderRadius: BorderRadius.circular(12)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(ikon, color: warna, size: 25),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(p['nama'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                Text('${p['qty']} qty', style: TextStyle(color: _textMuted)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(value: persen, backgroundColor: Colors.grey[800], color: _primaryColor, minHeight: 6),
+            const SizedBox(height: 8),
+            Text(_formatRupiah(p['harga']), style: TextStyle(color: _textMuted, fontSize: 12)),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  List<Widget> _buildRincianCabangList(dynamic totalOmsetGlobal) {
+    final rincianList = _dataDashboard!['rincian_cabang'] as List<dynamic>;
+    final double totalOmset = double.tryParse(totalOmsetGlobal.toString()) ?? 1;
+
+    return rincianList.map((r) {
+      final double omsetCabang = double.tryParse(r['omset'].toString()) ?? 0;
+      final double persentase = totalOmset > 0 ? (omsetCabang / totalOmset) * 100 : 0;
+
+      return GestureDetector(
+        onTap: () {
+          // Drill down ke cabang tersebut
+          setState(() {
+            _cabangAktif = r['nama'];
+          });
+          _savePreferences();
+          _fetchDataDashboard();
+        },
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A27),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF2A2A3C)),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(judul, style: const TextStyle(color: Color(0xFF9AA4B2))),
-                  const SizedBox(height: 5),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      nilai,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(r['nama'], style: TextStyle(color: _primaryColor, fontWeight: FontWeight.bold, fontSize: 16)),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(color: const Color(0xFF2A2A3C), borderRadius: BorderRadius.circular(12)),
+                        child: Text('Kontribusi: ${persentase.toStringAsFixed(1)}%', style: TextStyle(color: _textMuted, fontSize: 11)),
                       ),
-                    ),
+                    ],
                   ),
+                  Row(
+                    children: [
+                      Text(_formatRupiah(r['omset']), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 4),
+                      Icon(Icons.chevron_right, color: _textMuted, size: 20),
+                    ],
+                  )
                 ],
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GrafikProduk extends StatelessWidget {
-  const _GrafikProduk({required this.produk, required this.formatRupiah});
-
-  final List<_ProdukTerlaris> produk;
-  final String Function(double) formatRupiah;
-
-  @override
-  Widget build(BuildContext context) {
-    final maxQty = produk.fold<double>(
-      0,
-      (maxValue, item) => item.qty > maxValue ? item.qty : maxValue,
-    );
-
-    return Card(
-      color: const Color(0xFF1A1F2B),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            for (final item in produk)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 18),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final fraction = maxQty == 0 ? 0.0 : item.qty / maxQty;
-                    final barWidth = constraints.maxWidth * fraction;
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                item.nama,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text('${_formatQty(item.qty)} qty'),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          height: 12,
-                          width: constraints.maxWidth,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2A3040),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          alignment: Alignment.centerLeft,
-                          child: Container(
-                            width: barWidth,
-                            height: 12,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF8B7CFF),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          formatRupiah(item.nominal),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF9AA4B2),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
+              const Divider(color: Color(0xFF333333), height: 24),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Terlaris di cabang ini:', style: TextStyle(color: _textMuted, fontSize: 12, fontStyle: FontStyle.italic)),
               ),
-          ],
+              const SizedBox(height: 8),
+              
+              // List Produk Per Cabang
+              ...(r['produk'] as List<dynamic>).map((p) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(p['nama'], style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                      Text('${p['qty']} qty', style: TextStyle(color: _textMuted, fontSize: 13)),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
         ),
-      ),
-    );
-  }
-
-  String _formatQty(double qty) =>
-      qty == qty.roundToDouble() ? qty.toInt().toString() : qty.toString();
-}
-
-class _PesanError extends StatelessWidget {
-  const _PesanError({required this.pesan});
-
-  final String pesan;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      color: const Color(0xFF492B35),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Text(pesan, style: const TextStyle(color: Colors.white)),
-      ),
-    );
+      );
+    }).toList();
   }
 }
