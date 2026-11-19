@@ -1,72 +1,41 @@
 import 'dart:convert';
-import 'package:dio/dio.dart';
+import 'package:http/http.dart' as http;
 
 class ApiService {
   static Future<List<Map<String, dynamic>>> tarikSemuaData(
     String url,
     String namaCabang,
   ) async {
-    // 1. Setup Dio dengan pengaturan anti-redirect-error
-    final dio = Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 30),
-      followRedirects: true, // KUNCI UTAMA
-      maxRedirects: 5,
-      responseType: ResponseType.plain, // Ambil teks mentah dulu
-    ));
-
     try {
-      // 2. Kirim POST request
-      final response = await dio.post(
-        url,
-        data: jsonEncode({
-          'action': 'tarikSemuaData',
-          'nama_cabang': namaCabang,
-        }),
-        options: Options(
-          headers: {'Content-Type': 'application/json; charset=UTF-8'},
-        ),
-      );
+      // 1. Susun URL dengan parameter
+      final uri = Uri.parse(url).replace(queryParameters: {
+        'action': 'tarikSemuaData',
+        'nama_cabang': namaCabang,
+      });
 
-      final body = response.data.toString().trim();
+      // 2. Gunakan GET (BUKAN POST)
+      final response = await http.get(uri).timeout(const Duration(seconds: 30));
 
-      if (body.isEmpty) {
-        throw Exception('Apps Script mengembalikan respons kosong');
+      final body = utf8.decode(response.bodyBytes).trim();
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('HTTP ${response.statusCode}: ${body.isEmpty ? "respons kosong" : body}');
       }
+      if (body.isEmpty) throw Exception('Respons kosong');
 
-      // 3. Decode JSON
-      final dynamic decoded;
-      try {
-        decoded = jsonDecode(body);
-      } on FormatException {
-        throw Exception('Respons bukan JSON: $body');
-      }
-
-      if (decoded is! Map<String, dynamic>) {
-        throw Exception('Format respons harus berupa JSON objek');
-      }
+      final decoded = jsonDecode(body);
 
       if (decoded['status'] != 'success') {
-        throw Exception(decoded['message']?.toString() ?? 'Permintaan ditolak oleh Apps Script');
+        throw Exception(decoded['message']?.toString() ?? 'Ditolak');
       }
 
       final data = decoded['data'];
-      if (data is! List) {
-        throw Exception('Field data bukan daftar JSON');
-      }
+      if (data is! List) throw Exception('Data bukan list');
 
-      // 4. Return data
-      return data
-          .whereType<Map>()
-          .map((item) => Map<String, dynamic>.from(item))
-          .toList();
+      return data.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList();
 
-    } on DioException catch (e) {
-      // Tangkap error dari Dio
-      if (e.response != null) {
-        throw Exception('HTTP ${e.response?.statusCode}: ${e.response?.data}');
-      }
-      throw Exception('Koneksi gagal: ${e.message}');
+    } catch (e) {
+      throw Exception(e.toString());
     }
   }
 }
