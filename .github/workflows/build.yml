@@ -1,8 +1,8 @@
-name: Build APK Owner
+name: Build & Release APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ] # Ganti ke "master" jika branch utama Anda master
   workflow_dispatch:
 
 jobs:
@@ -10,154 +10,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'zulu'
           java-version: '17'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.29.0'
-          channel: stable
+          channel: 'stable'
           cache: true
 
-      - name: Generate Flutter Android project
-        run: |
-          flutter create --org com.kasirkuowner --project-name kasirku_owner temp_app
-          cp -r temp_app/android/android_app_placeholder ./placeholder 2>/dev/null || true
-          rm -rf android
-          cp -r temp_app/android ./android
-          rm -rf temp_app
-
-      - name: Inject Internet Permission
-        run: |
-          sed -i '/<application/i \\    <uses-permission android:name="android.permission.INTERNET"/>' android/app/src/main/AndroidManifest.xml
-
-      - name: Prepare release keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        run: |
-          set -e
-          PASSWORD="${KEYSTORE_PASSWORD:-kasirku-ci-release-key}"
-          mkdir -p android/app
-
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            printf '%s' "$KEYSTORE_BASE64" | tr -d '\n\r ' | base64 --decode > android/app/kasirku.jks
-          fi
-
-          if [ ! -s android/app/kasirku.jks ] || ! keytool -list -keystore android/app/kasirku.jks -storepass "$PASSWORD" -alias kasirku >/dev/null 2>&1; then
-            echo "Configured keystore is missing or invalid; generating a CI release keystore."
-            rm -f android/app/kasirku.jks
-            keytool -genkeypair \
-              -v \
-              -keystore android/app/kasirku.jks \
-              -storetype PKCS12 \
-              -storepass "$PASSWORD" \
-              -keypass "$PASSWORD" \
-              -alias kasirku \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Kasirku Owner, OU=Mobile, O=Kasirku, L=Jakarta, ST=DKI Jakarta, C=ID"
-          fi
-
-          printf 'KEY_PASS=%s\n' "$PASSWORD" > /tmp/kasirku-key.env
-
-      - name: Create key.properties
-        run: |
-          . /tmp/kasirku-key.env
-          cat > android/key.properties <<EOF
-          storePassword=$KEY_PASS
-          keyPassword=$KEY_PASS
-          keyAlias=kasirku
-          storeFile=kasirku.jks
-          EOF
-
-      - name: Configure release signing
-        run: |
-          cat > android/app/build.gradle <<'EOF'
-          plugins {
-              id "com.android.application"
-              id "kotlin-android"
-              id "dev.flutter.flutter-gradle-plugin"
-          }
-
-          def localProperties = new Properties()
-          def localPropertiesFile = rootProject.file('local.properties')
-          if (localPropertiesFile.exists()) {
-              localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
-          }
-
-          def flutterVersionCode = localProperties.getProperty('flutter.versionCode') ?: '1'
-          def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '1.0'
-
-          def keystoreProperties = new Properties()
-          def keystorePropertiesFile = rootProject.file('key.properties')
-          if (keystorePropertiesFile.exists()) {
-              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-          }
-
-          android {
-              namespace = "com.kasirkuowner.kasirku_owner"
-              compileSdk = flutter.compileSdkVersion
-              ndkVersion = flutter.ndkVersion
-
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
-
-              kotlinOptions {
-                  jvmTarget = JavaVersion.VERSION_17.toString()
-              }
-
-              defaultConfig {
-                  applicationId = "com.kasirkuowner.kasirku_owner"
-                  minSdk = flutter.minSdkVersion
-                  targetSdk = flutter.targetSdkVersion
-                  versionCode = flutterVersionCode.toInteger()
-                  versionName = flutterVersionName
-              }
-
-              signingConfigs {
-                  release {
-                      keyAlias = keystoreProperties['keyAlias']
-                      keyPassword = keystoreProperties['keyPassword']
-                      storeFile = keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
-                      storePassword = keystoreProperties['storePassword']
-                  }
-              }
-
-              buildTypes {
-                  release {
-                      signingConfig = signingConfigs.release
-                  }
-              }
-          }
-
-          flutter {
-              source = '../..'
-          }
-          EOF
-
-      - name: Flutter pub get
+      - name: Flutter Pub Get
         run: flutter pub get
+
+      - name: Decode Keystore & Create key.properties
+        run: |
+          # 1. Ubah Base64 Secret menjadi file .jks
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+          
+          # 2. Buat file key.properties secara otomatis
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=upload-keystore.jks
+          EOF
 
       - name: Build APK
         run: flutter build apk --release
 
-      - name: Rename APK
-        run: mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/kasirku-owner-v1.0.0.apk
-
-      - name: Upload APK artifact
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kasirku-owner-apk
-          path: build/app/outputs/flutter-apk/kasirku-owner-v1.0.0.apk
-          retention-days: 30
+          name: release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 7
