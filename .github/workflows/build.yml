@@ -2,7 +2,7 @@ name: Build & Release APK
 
 on:
   push:
-    branches: [ "main" ] # Ganti ke "master" jika branch utama Anda master
+    branches: [ "main" ] 
   workflow_dispatch:
 
 jobs:
@@ -23,23 +23,23 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          cache: true
+          # cache: true  <-- KITA HAPUS/NONAKTIFKAN BARIS INI
 
       - name: Flutter Pub Get
         run: flutter pub get
 
       - name: Decode Keystore & Create key.properties
         run: |
-          # 1. Ubah Base64 Secret menjadi file .jks
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
-          
-          # 2. Buat file key.properties secara otomatis
           cat > android/key.properties <<EOF
           storePassword=${{ secrets.KEYSTORE_PASSWORD }}
           keyPassword=${{ secrets.KEY_PASSWORD }}
           keyAlias=${{ secrets.KEY_ALIAS }}
           storeFile=upload-keystore.jks
           EOF
+
+      - name: Clean Flutter Build
+        run: flutter clean # <-- TAMBAHKAN BARIS INI UNTUK MEMBERSIHKAN SISA BUILD LAMA
 
       - name: Build APK
         run: flutter build apk --release
