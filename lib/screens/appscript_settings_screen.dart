@@ -10,8 +10,8 @@ class AppScriptSettingsScreen extends StatefulWidget {
 }
 
 class _AppScriptSettingsScreenState extends State<AppScriptSettingsScreen> {
-  static const _urlKey = 'appscript_url';
-  final _controller = TextEditingController();
+  static const String _urlKey = 'appscript_url';
+  final TextEditingController _controller = TextEditingController();
   bool _isLoading = true;
 
   @override
@@ -23,13 +23,17 @@ class _AppScriptSettingsScreenState extends State<AppScriptSettingsScreen> {
   Future<void> _loadUrl() async {
     final prefs = await SharedPreferences.getInstance();
     _controller.text = prefs.getString(_urlKey) ?? '';
-    if (mounted) setState(() => _isLoading = false);
+
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _saveUrl() async {
     final url = _controller.text.trim();
 
     if (!url.startsWith('https://')) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('URL harus diawali dengan https://')),
       );
@@ -68,14 +72,18 @@ class _AppScriptSettingsScreenState extends State<AppScriptSettingsScreen> {
                 children: [
                   const Text(
                     'URL Apps Script',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _controller,
                     keyboardType: TextInputType.url,
                     decoration: const InputDecoration(
-                      hintText: 'https://script.google.com/macros/s/.../exec',
+                      hintText:
+                          'https://script.google.com/macros/s/.../exec',
                       border: OutlineInputBorder(),
                     ),
                   ),
