@@ -2,7 +2,7 @@ name: Build & Release APK
 
 on:
   push:
-    branches: [ "main" ] 
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
@@ -16,30 +16,39 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: zulu
           java-version: '17'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
-          # cache: true  <-- KITA HAPUS/NONAKTIFKAN BARIS INI
+          channel: stable
+
+      - name: Restore Android project
+        run: |
+          rm -rf android
+          flutter create . --platforms=android --org com.example --project-name kasirku_owner
 
       - name: Flutter Pub Get
         run: flutter pub get
 
-      - name: Decode Keystore & Create key.properties
+      - name: Configure Android release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+          echo "$KEYSTORE_BASE64" | tr -d '\r\n' | base64 --decode > android/app/upload-keystore.jks
           cat > android/key.properties <<EOF
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword=${{ secrets.KEY_PASSWORD }}
-          keyAlias=${{ secrets.KEY_ALIAS }}
+          storePassword=$KEYSTORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
           storeFile=upload-keystore.jks
           EOF
 
       - name: Clean Flutter Build
-        run: flutter clean # <-- TAMBAHKAN BARIS INI UNTUK MEMBERSIHKAN SISA BUILD LAMA
+        run: flutter clean
 
       - name: Build APK
         run: flutter build apk --release
